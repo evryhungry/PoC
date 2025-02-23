@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>채팅방 입장</title>
+    <script>
+        function enterChatRoom() {
+            var username = document.getElementById("username").value;
+            var roomId = document.getElementById("roomId").value;
+            if (!username) {
+                alert("이름을 입력하세요.");
+                return;
+            }
+            window.location.href = "/chat/room/" + roomId + "?username=" + encodeURIComponent(username);
+        }
+    </script>
+</head>
+<body>
+<h2>채팅방 입장</h2>
+<input type="hidden" id="roomId" value="{{roomId}}">
+<label>이름:</label>
+<label for="username"></label><input type="text" id="username" placeholder="이름 입력">
+<button onclick="enterChatRoom()">입장하기</button>
+</body>
+</html>
