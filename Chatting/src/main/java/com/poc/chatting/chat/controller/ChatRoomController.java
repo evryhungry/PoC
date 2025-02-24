@@ -29,7 +29,7 @@ public class ChatRoomController {
     @GetMapping("/room")
     public String rooms(Model model) {
         model.addAttribute("rooms", chatRoomRepository.findAllRoom());
-        return "room";  // ✅ "room"을 반환하여 templates/room.html을 찾도록 수정
+        return "roomlist";
     }
 
     /**
@@ -41,7 +41,7 @@ public class ChatRoomController {
     @GetMapping("/room/enter/{roomId}")
     public String roomDetail(Model model, @PathVariable String roomId) {
         model.addAttribute("roomId", roomId);
-        return "roomdetail";  // ✅ "roomdetail"을 반환하여 templates/roomdetail.html을 찾도록 수정
+        return "roomdetail";
     }
 
     /**

@@ -1,26 +1,127 @@
-<!DOCTYPE html>
-<html lang="ko">
+<!doctype html>
+<html lang="en" xmlns:v-on="http://www.w3.org/1999/xhtml" xmlns:v-bind="http://www.w3.org/1999/xhtml">
 <head>
+
+    <title>WebSocket Chat</title>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>채팅방 입장</title>
-    <script>
-        function enterChatRoom() {
-            var username = document.getElementById("username").value;
-            var roomId = document.getElementById("roomId").value;
-            if (!username) {
-                alert("이름을 입력하세요.");
-                return;
-            }
-            window.location.href = "/chat/room/" + roomId + "?username=" + encodeURIComponent(username);
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <!-- Bootstrap CSS 적용 -->
+    <link rel="stylesheet" href="/webjars/bootstrap/4.3.1/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+
+    <style>
+        /* Vue.js에서 v-cloak을 적용하여 화면 깜빡임 방지 */
+        [v-cloak] {
+            display: none;
         }
-    </script>
+    </style>
 </head>
 <body>
-<h2>채팅방 입장</h2>
-<input type="hidden" id="roomId" value="{{roomId}}">
-<label>이름:</label>
-<label for="username"></label><input type="text" id="username" placeholder="이름 입력">
-<button onclick="enterChatRoom()">입장하기</button>
+<div class="container" id="app" v-cloak>
+    <div>
+        <h2>{{ room.name }}</h2>
+    </div>
+    <!-- 메시지 입력 -->
+    <div class="input-group">
+        <div class="input-group-prepend">
+            <label class="input-group-text">내용</label>
+        </div>
+        <input type="text" class="form-control" v-model="message" v-on:keydown.enter="sendMessage">
+        <div class="input-group-append">
+            <button class="btn btn-primary" type="button" @click="sendMessage">보내기</button>
+        </div>
+    </div>
+
+    <!-- 메시지 목록 -->
+    <ul class="list-group mt-3">
+        <li class="list-group-item" v-for="message in messages">
+            {{ message.sender }} - {{ message.message }}
+        </li>
+    </ul>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+<script src="/webjars/axios/0.17.1/dist/axios.min.js"></script>
+<script src="/webjars/sockjs-client/1.1.2/sockjs.min.js"></script>
+<script src="/webjars/stomp-websocket/2.3.3-1/stomp.min.js"></script>
+
+<script>
+    let sock = new SockJS("/ws-stomp");
+    let ws = Stomp.over(sock);
+    let reconnect = 0;
+
+    let vm = new Vue({
+        el: "#app",
+        data: {
+            roomId: '',
+            room: {},
+            sender: '',
+            message: '',
+            messages: []
+        },
+        created() {
+            this.roomId = localStorage.getItem('wschat.roomId');
+            this.sender = localStorage.getItem('wschat.sender');
+            this.findRoom();
+            connect();
+        },
+        methods: {
+            findRoom() {
+                axios.get('/chat/room/' + this.roomId).then(response => {
+                    this.room = response.data;
+                });
+            },
+            sendMessage() {
+                ws.send("/pub/chat/message", {}, JSON.stringify({
+                    type: 'TALK',
+                    roomId: this.roomId,
+                    sender: this.sender,
+                    message: this.message
+                }));
+                this.message = '';
+            },
+            recvMessage(recv) {
+                this.messages.unshift({
+                    "type": recv.type,
+                    "sender": recv.type === 'ENTER' ? '[알림]' : recv.sender,
+                    "message": recv.message
+                });
+            }
+        }
+    });
+    
+    function connect() {
+        ws.connect({}, function (frame) {
+            console.log('Connected: ' + frame);
+            ws.subscribe("/sub/chat/room/" + vm.$data.roomId, function (message) {
+                console.log('Message received: ', message);
+                let recv = JSON.parse(message.body);
+                vm.recvMessage(recv);
+            });
+
+            ws.send("/pub/chat/message", {}, JSON.stringify({
+                type: 'ENTER',
+                roomId: vm.$data.roomId,
+                sender: vm.$data.sender
+            }));
+        }, function (error) {
+            console.log('Connection error: ', error);
+            if (reconnect++ < 5) {
+                setTimeout(function () {
+                    sock = new SockJS("/ws-stomp");
+                    ws = Stomp.over(sock);
+                    connect();
+                }, 10 * 1000);
+            }
+        });
+    }
+
+    ws.onclose = function (event) {
+        console.log('Connection closed: ', event);
+    };
+
+    ws.onerror = function (error) {
+        console.log('Connection error: ', error);
+    };
+</script>
 </body>
 </html>
