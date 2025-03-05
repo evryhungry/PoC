@@ -1,7 +1,9 @@
 package com.poc.chatting.chat.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.poc.chatting.chat.model.ChatMessage;
+import com.poc.chatting.chat.document.ChatMessage;
+import com.poc.chatting.chat.repository.ChatMessageRepository;
+import com.poc.chatting.chat.repository.ChatRoomRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.Message;
@@ -10,6 +12,8 @@ import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.stereotype.Service;
+
+import java.io.IOException;
 
 /**
  * Redis에서 발행된 메시지를 수신하는 클래스
@@ -23,14 +27,10 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class RedisSubscriber implements MessageListener {
 
-    /** JSON 데이터를 객체로 변환하기 위한 ObjectMapper */
     private final ObjectMapper objectMapper;
-
-    /** Redis의 데이터 직렬화 및 역직렬화를 담당하는 RedisTemplate */
-    private final RedisTemplate redisTemplate;
-
-    /** WebSocket을 통해 메시지를 클라이언트에게 전송하는 SimpMessageSendingOperations */
+    private final RedisTemplate<String, String> redisTemplate;
     private final SimpMessageSendingOperations messagingTemplate;
+    private final ChatMessageRepository cmRepository;
 
     /**
      * Redis에서 메시지가 발행(Publish)되었을 때 호출되는 메서드
@@ -42,17 +42,37 @@ public class RedisSubscriber implements MessageListener {
     public void onMessage(Message message, byte[] pattern) {
         try {
             // Redis에서 수신한 메시지를 문자열로 변환
-            String publishMessage = (String) redisTemplate.getStringSerializer().deserialize(message.getBody());
+            String publishMessage = redisTemplate.getStringSerializer().deserialize(message.getBody());
+
+            if (publishMessage == null) {
+                log.warn("Received null message from Redis.");
+                return;
+            }
+
+
             log.info("Received message: {}", publishMessage); // 수신된 메시지 로깅
 
             // 문자열 메시지를 ChatMessage 객체로 역직렬화
+
             ChatMessage roomMessage = objectMapper.readValue(publishMessage, ChatMessage.class);
+            cmRepository.save(roomMessage);
+
+            // 메시지가 정상적으로 변환되었는지 확인
+            if (roomMessage.getRoomId() == null || roomMessage.getSender() == null) {
+                log.warn("Invalid ChatMessage received: {}", publishMessage);
+                return;
+            }
 
             // WebSocket 구독자에게 메시지 전송
-            messagingTemplate.convertAndSend("/sub/chat/room/" + roomMessage.getRoomId(), roomMessage);
+            String destination = String.format("/sub/chat/room/%s", roomMessage.getRoomId());
+            messagingTemplate.convertAndSend(destination, roomMessage);
+
+        } catch (IOException e) {
+            log.error("JSON deserialization error: {}", e.getMessage()); // JSON 변환 오류 로그
         } catch (Exception e) {
-            log.error("Error processing message: {}", e.getMessage()); // 에러 발생 시 로그 출력
+            log.error("Unexpected error while processing Redis message: {}", e.getMessage()); // 기타 예외 처리
         }
     }
+
 }
 

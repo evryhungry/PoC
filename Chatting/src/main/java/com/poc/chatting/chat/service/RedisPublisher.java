@@ -1,6 +1,6 @@
 package com.poc.chatting.chat.service;
 
-import com.poc.chatting.chat.model.ChatMessage;
+import com.poc.chatting.chat.document.ChatMessage;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.stereotype.Service;

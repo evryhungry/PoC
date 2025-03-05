@@ -1,79 +1,56 @@
 package com.poc.chatting.chat.controller;
 
-import com.poc.chatting.chat.entity.ChatRoom;
-import com.poc.chatting.chat.repository.ChatRoomRepository;
+import com.poc.chatting.chat.document.ChatRoom;
+import com.poc.chatting.chat.service.ChatRoomService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.ModelAndView;
 
 import java.util.List;
 
-/**
- * 채팅방을 조회, 생성, 입장을 담당하는 컨트롤러
- */
+@RestController
+@RequestMapping("/chat/rooms")
 @RequiredArgsConstructor
-@Controller
-@RequestMapping("/chat")
 public class ChatRoomController {
 
-    private final ChatRoomRepository chatRoomRepository;
+    private final ChatRoomService chatRoomService;
 
-    /**
-     * 채팅방 목록 페이지 반환
-     *
-     * @param model Spring의 Model 객체
-     * @return "/chat/room" 뷰 페이지
-     */
-    @GetMapping("/room")
-    public String rooms(Model model) {
-        model.addAttribute("rooms", chatRoomRepository.findAllRoom());
-        return "roomlist";
+    /** 1. 채팅방 생성 */
+    @PostMapping
+    public ResponseEntity<ChatRoom> createRoom(@RequestBody String name) {
+        return ResponseEntity.ok(chatRoomService.createChatRoom(name));
     }
 
-    /**
-     * 특정 채팅방 상세 페이지로 이동
-     * @param model Spring의 Model 객체
-     * @param roomId 입장할 채팅방의 ID
-     * @return "roomdetail" 뷰 페이지
-     */
-    @GetMapping("/room/enter/{roomId}")
-    public String roomDetail(Model model, @PathVariable String roomId) {
-        model.addAttribute("roomId", roomId);
-        return "roomdetail";
+    /** 2. 모든 채팅방 조회 */
+    @GetMapping
+    public ResponseEntity<List<ChatRoom>> getAllRooms() {
+        return ResponseEntity.ok(chatRoomService.getAllRooms());
     }
 
-    /**
-     * 모든 채팅방 목록을 JSON 형식으로 반환
-     * @return List<ChatRoom> 채팅방 목록
-     */
-    @GetMapping("/rooms")
-    @ResponseBody
-    public List<ChatRoom> room() {
-        return chatRoomRepository.findAllRoom();
+    /** 3. 특정 채팅방 조회 */
+    @GetMapping("/{roomId}")
+    public ResponseEntity<ChatRoom> getRoomById(@PathVariable String roomId) {
+        return chatRoomService.getRoomById(roomId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
-    /**
-     * 새로운 채팅방 생성 후 반환
-     * @param name 생성할 채팅방의 이름
-     * @return 생성된 ChatRoom 객체
-     */
-    @PostMapping("/room")
-    @ResponseBody
-    public ChatRoom createRoom(@RequestParam String name) {
-        return chatRoomRepository.createChatRoom(name);
+    /** 4. 채팅방 참여 */
+    @PostMapping("/{roomId}/join/{userId}")
+    public ResponseEntity<ChatRoom> joinRoom(@PathVariable String roomId, @PathVariable String userId) {
+        return ResponseEntity.ok(chatRoomService.addParticipant(roomId, userId));
     }
 
-    /**
-     * 특정 채팅방 정보를 JSON 형식으로 반환
-     * @param roomId 조회할 채팅방의 ID
-     * @return ChatRoom 객체
-     */
-    @GetMapping("/room/{roomId}")
-    @ResponseBody
-    public ChatRoom roomInfo(@PathVariable String roomId) {
-        return chatRoomRepository.findRoomById(roomId);
+    /** 5. 채팅방 퇴장 */
+    @PostMapping("/{roomId}/leave/{userId}")
+    public ResponseEntity<ChatRoom> leaveRoom(@PathVariable String roomId, @PathVariable String userId) {
+        return ResponseEntity.ok(chatRoomService.removeParticipant(roomId, userId));
+    }
+
+    /** 6. 채팅방 삭제 */
+    @DeleteMapping("/{roomId}")
+    public ResponseEntity<Void> deleteRoom(@PathVariable String roomId) {
+        chatRoomService.deleteChatRoom(roomId);
+        return ResponseEntity.ok().build();
     }
 }
-

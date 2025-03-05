@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <title>WebSocket Chat</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link rel="stylesheet" href="/webjars/bootstrap/4.3.1/dist/css/bootstrap.min.css">
+    <script src="/webjars/vue/2.5.16/dist/vue.min.js"></script>
+    <script src="/webjars/axios/0.17.1/dist/axios.min.js"></script>
+    <script src="/webjars/sockjs-client/1.1.2/sockjs.min.js"></script>
+    <script src="/webjars/stomp-websocket/2.3.3-1/stomp.min.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body>
+<div class="container" id="app" v-cloak>
+
+    <h3>채팅방 리스트</h3>
+
+    <!-- 채팅방 생성 -->
+    <div class="input-group mb-3">
+        <input type="text" class="form-control" v-model="room_name" placeholder="채팅방 이름" v-on:keyup.enter="createRoom">
+        <div class="input-group-append">
+            <button class="btn btn-primary" @click="createRoom">채팅방 개설</button>
+        </div>
+    </div>
+
+    <div v-if="!userId" class="mb-3">
+        <input type="text" class="form-control" v-model="userName" placeholder="유저를 등록하세요" v-on:keyup.enter="registerUser">
+        <button class="btn btn-primary mt-2" @click="registerUser">등록</button>
+    </div>
+
+    <!-- 채팅방 목록 -->
+    <ul class="list-group">
+        <li v-for="item in chatrooms" :key="item.id"
+            class="list-group-item list-group-item-action"
+            @click="enterRoom(item.id)">
+            {{ item.name }}
+        </li>
+    </ul>
+
+    <!-- 채팅방 -->
+    <div v-if="currentRoomId" class="mt-4">
+        <h3>채팅방: {{ currentRoomName }}</h3>
+        <div class="chat-box border p-3" style="height: 300px; overflow-y: auto;">
+            <div v-for="msg in messages" :key="msg.id">
+                <strong>{{ msg.sender }}</strong>: {{ msg.message }}
+            </div>
+        </div>
+        <div class="input-group mt-2">
+            <input type="text" class="form-control" v-model="messageText" placeholder="메시지 입력" v-on:keyup.enter="sendMessage">
+            <div class="input-group-append">
+                <button class="btn btn-success" @click="sendMessage">전송</button>
+            </div>
+        </div>
+        <button class="btn btn-danger mt-2" @click="leaveRoom">나가기</button>
+    </div>
+</div>
+
+<script>
+    new Vue({
+        el: '#app',
+        data: {
+            userName: '',
+            userId: null,
+            room_name: '',
+            chatrooms: [],
+            currentRoomId: null,
+            currentRoomName: '',
+            messages: [],
+            messageText: '',
+            stompClient: null
+        },
+        created() {
+            // 로컬 스토리지에 저장된 유저 ID가 있으면 불러오기
+            const savedUserId = localStorage.getItem("userId");
+            if (savedUserId) {
+                this.userId = savedUserId;
+            }
+            this.findAllRoom();
+        },
+        methods: {
+            /** 1. 유저 등록 */
+            registerUser() {
+                if (!this.userName) {
+                    alert("대화명을 입력하세요.");
+                    return;
+                }
+                axios.post('/user', { name: this.userName })
+                    .then(response => {
+                        alert("유저가 등록되었습니다.");
+                        this.userId = response.data.id; // 생성된 유저 ID 저장
+                        localStorage.setItem("userId", this.userId);
+                    })
+                    .catch(() => alert("유저 등록 실패!"));
+            },
+
+            /** 2. 모든 채팅방 조회 */
+            findAllRoom() {
+                axios.get('/chat/rooms').then(response => {
+                    console.log("채팅방 목록:", response.data);
+                    this.chatrooms = response.data;
+                });
+            },
+
+            /** ✅ 3. 채팅방 생성 */
+            createRoom() {
+                if (!this.room_name) {
+                    alert("방 이름을 입력하세요.");
+                    return;
+                }
+                axios.post('/chat/rooms', this.room_name, { headers: { 'Content-Type': 'text/plain' } })
+                    .then(response => {
+                        alert(`${response.data.name} 방이 개설되었습니다.`);
+                        this.room_name = '';
+                        this.findAllRoom();
+                    })
+                    .catch(() => alert("채팅방 개설 실패!"));
+            },
+
+            /** ✅ 4. 채팅방 입장 */
+            enterRoom(roomId) {
+                if (!this.userId) {
+                    alert("먼저 유저를 등록하세요.");
+                    return;
+                }
+                this.currentRoomId = roomId;
+
+                // 채팅방 정보 가져오기
+                axios.get(`/chat/rooms/${roomId}`).then(response => {
+                    this.currentRoomName = response.data.name;
+                });
+
+                // 채팅 내역 불러오기
+                axios.get(`/chat/messages/${roomId}`).then(response => {
+                    this.messages = response.data;
+                });
+
+                // WebSocket 연결
+                this.connectWebSocket();
+            },
+
+            /** ✅ 5. WebSocket 연결 */
+            connectWebSocket() {
+                if (this.stompClient && this.stompClient.connected) {
+                    return; // 이미 연결된 경우 재연결 방지
+                }
+
+                let socket = new SockJS('/ws-stomp');
+                this.stompClient = Stomp.over(socket);
+
+                this.stompClient.connect({}, frame => {
+                    console.log("WebSocket 연결 성공: " + frame);
+
+                    // 채팅방 메시지 구독
+                    this.stompClient.subscribe(`/sub/chat/room/${this.currentRoomId}`, message => {
+                        let receivedMessage = JSON.parse(message.body);
+                        this.messages.push(receivedMessage);
+                    });
+
+                }, error => {
+                    console.error("WebSocket 연결 실패: " + error);
+                });
+            },
+
+            /** ✅ 6. 메시지 전송 */
+            sendMessage() {
+                if (!this.messageText.trim()) return;
+
+                let chatMessage = {
+                    roomId: this.currentRoomId,
+                    sender: this.userName,
+                    message: this.messageText
+                };
+
+                this.stompClient.send("/pub/chat/message", {}, JSON.stringify(chatMessage));
+                this.messages.push(chatMessage);
+                this.messageText = '';
+            },
+
+            /** ✅ 7. 채팅방 나가기 */
+            leaveRoom() {
+                if (!this.currentRoomId) return;
+
+                axios.post(`/chat/rooms/${this.currentRoomId}/leave/${this.userId}`)
+                    .then(() => {
+                        this.currentRoomId = null;
+                        this.currentRoomName = '';
+                        this.messages = [];
+                        if (this.stompClient) {
+                            this.stompClient.disconnect();
+                        }
+                    })
+                    .catch(() => alert("채팅방 퇴장 실패!"));
+            }
+        }
+    });
+
+</script>
+</body>
+</html>

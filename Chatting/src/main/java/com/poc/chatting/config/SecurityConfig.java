@@ -15,9 +15,11 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(AbstractHttpConfigurer::disable) // 개발 중엔 일단 csrf 비활성화 추천
+                .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/chat/**").permitAll()  // chat 관련 요청 모두 허용
+                        .requestMatchers("/ws-stomp/**").permitAll()
+                        .requestMatchers("/sub/**").permitAll()
+                        .requestMatchers("/pub/**").permitAll()
                         .anyRequest().permitAll()
                 )
                 .formLogin(Customizer.withDefaults());
